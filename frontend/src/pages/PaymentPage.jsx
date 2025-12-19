@@ -3,7 +3,9 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import shareqr from '../assets/qris/shareqr.jpeg';
 
 function formatCurrency(v) {
-  return v.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 });
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '-';
+  return n.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 });
 }
 
 export default function PaymentPage() {
@@ -12,62 +14,84 @@ export default function PaymentPage() {
   const { state } = useLocation();
 
   const [booking, setBooking] = React.useState(null);
+  const [paymentInfo, setPaymentInfo] = React.useState(state?.paymentInfo || null);
 
   React.useEffect(() => {
     let cancelled = false;
     // try to get booking from storage
-    import('../lib/bookings').then(({ getBookingById }) => {
+    import('../lib/bookings.js').then(({ getBookingById, addBooking }) => {
       const b = getBookingById(bookingId);
       if (!cancelled) setBooking(b || null);
+
+      // if booking wasn't saved locally but we arrived here with state (server-created booking), persist it
+      if (!b && state && state.bookingId && state.bookingId === bookingId) {
+        const toSave = {
+          id: bookingId,
+          eventName: state.eventTitle,
+          date: state.date,
+          time: state.time,
+          location: state.location,
+          status: state.paymentInfo?.status === 'paid' ? 'Confirmed' : 'Pending',
+          qty: state.qty ?? 1,
+          pricePer: state.pricePer ?? state.total ?? 0,
+          total: state.total ?? 0,
+          buyer: state.buyerName || 'Nama Pemesan',
+        };
+        try { addBooking(toSave); } catch(e) { /* ignore */ }
+        if (!cancelled) setBooking(toSave);
+      }
     });
 
-    // if arrived with state (newly created booking), reflect it
+    // if arrived with state (newly created booking), reflect it in UI
     if (state && state.bookingId && state.bookingId === bookingId) {
-      setBooking({ id: bookingId, eventName: state.eventTitle, qty: state.qty, total: state.total, pricePer: state.pricePer, date: state.date, time: state.time, location: state.location });
+      setBooking(prev => prev || { id: bookingId, eventName: state.eventTitle, qty: state.qty, total: state.total, pricePer: state.pricePer, date: state.date, time: state.time, location: state.location });
+      if (state.paymentInfo) setPaymentInfo(state.paymentInfo);
     }
     return () => { cancelled = true; };
   }, [bookingId, state]);
 
   const qty = booking?.qty ?? state?.qty ?? null;
-  const pricePer = booking?.pricePer ?? state?.pricePer ?? null;
-  const total = booking?.total ?? state?.total ?? null;
+  const rawTotal = booking?.total ?? state?.total ?? null;
+  const total = paymentInfo?.total_price ?? rawTotal;
+  const rawPricePer = booking?.pricePer ?? state?.pricePer ?? null;
+  const pricePer = rawPricePer ?? (Number.isFinite(Number(total)) && Number.isFinite(Number(qty)) ? Math.round(Number(total) / Math.max(1, Number(qty))) : null);
   const eventTitle = booking?.eventName ?? state?.eventTitle ?? '';
 
   // payment actions
   const onPaid = (method = 'manual') => {
     // mark booking as confirmed and redirect to history
-    import('../lib/bookings').then(({ updateBooking }) => {
+    import('../lib/bookings.js').then(({ updateBooking }) => {
       const patch = { status: 'Confirmed', paidAt: new Date().toISOString(), paidMethod: method };
       updateBooking(bookingId, patch);
-      navigate('/my-bookings');
+      navigate('/booking-history');
     });
   };
 
   const onPayNow = () => {
     // simulate immediate payment (used for "Bayar Sekarang" if present)
-    import('../lib/bookings').then(({ updateBooking }) => {
+    import('../lib/bookings.js').then(({ updateBooking }) => {
       updateBooking(bookingId, { status: 'Pending' });
       setTimeout(() => {
         updateBooking(bookingId, { status: 'Confirmed', paidAt: new Date().toISOString(), paidMethod: 'qris' });
-        navigate('/my-bookings');
+        navigate('/booking-history');
       }, 1200);
     });
   };
 
   const onPayLater = () => {
     // set booking to pending (pay later) and return to bookings list
-    import('../lib/bookings').then(({ updateBooking }) => {
+    import('../lib/bookings.js').then(({ updateBooking }) => {
       updateBooking(bookingId, { status: 'Pending' });
-      navigate('/my-bookings');
+      navigate('/booking-history');
     });
   };
 
   const onCancel = () => {
     // confirm then cancel booking and return to bookings list
     if (!window.confirm('Batalkan booking ini? Tindakan tidak dapat dibatalkan.')) return;
-    import('../lib/bookings').then(({ updateBooking }) => {
+    import('../lib/bookings.js').then(({ updateBooking }) => {
       updateBooking(bookingId, { status: 'Cancelled', cancelledAt: new Date().toISOString() });
-      navigate('/my-bookings');
+      navigate('/booking-history');
     });
   };
 
@@ -78,10 +102,19 @@ export default function PaymentPage() {
         <p className="text-sm text-slate-600 mb-4">Pembayaran dilakukan melalui QRIS. Scan kode di bawah menggunakan aplikasi dompet digital Anda.</p>
 
         <div className="bg-slate-50 p-4 rounded-xl flex items-center justify-center mb-4">
-          <img src={shareqr} alt="QRIS" className="w-64 h-64 object-contain" />
+          {paymentInfo && paymentInfo.method === 'qris' && paymentInfo.details ? (
+            <img src={paymentInfo.details} alt="QRIS" className="w-64 h-64 object-contain" />
+          ) : paymentInfo && paymentInfo.method && paymentInfo.details ? (
+            <div className="text-left p-4">
+              <div className="text-sm text-slate-500">Payment Method: <span className="font-medium text-slate-800">{paymentInfo.method}</span></div>
+              <div className="mt-2 font-mono text-sm text-slate-700">{paymentInfo.details}</div>
+            </div>
+          ) : (
+            <img src={shareqr} alt="QRIS" className="w-64 h-64 object-contain" />
+          )}
         </div>
 
-        {total !== null ? (
+        { total != null ? (
           <div className="mb-4 text-left">
             <div className="text-sm text-slate-500">Acara: <span className="font-medium text-slate-800">{eventTitle}</span></div>
             <div className="text-sm text-slate-500">Jumlah tiket: <span className="font-medium">{qty}</span></div>

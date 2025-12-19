@@ -8,11 +8,11 @@ const BookingHistory = () => {
 
   React.useEffect(() => {
     let mounted = true;
-    import('../lib/bookings').then(({ getBookings }) => {
+    import('../lib/bookings.js').then(({ getBookings }) => {
       if (mounted) setBookings(getBookings());
     });
 
-    const handler = () => import('../lib/bookings').then(({ getBookings }) => setBookings(getBookings()));
+    const handler = () => import('../lib/bookings.js').then(({ getBookings }) => setBookings(getBookings()));
     window.addEventListener('bookings:updated', handler);
     return () => { mounted = false; window.removeEventListener('bookings:updated', handler); };
   }, []);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, X, User, Ticket, LogOut } from 'lucide-react';
+import { logout } from '../services/authService';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -10,13 +11,17 @@ const Navbar = () => {
 
   // Hide navbar on authentication and specific pages
   const _hideNavbarOn = ['/login', '/register', '/admin/dashboard', '/super-admin/dashboard', '/404', '/organizer/events'];
-  if (_hideNavbarOn.some(p => location.pathname.startsWith(p))) return null;
+  const shouldHide = _hideNavbarOn.some((p) => location.pathname.startsWith(p));
   
-  // Simulasi status login
-  const isLoggedIn = true; 
+  // derive auth state from localStorage
+  const isLoggedIn = Boolean(localStorage.getItem('token'));
 
-  // Efek scroll
+  // Efek scroll biar navbar makin solid pas discroll
   useEffect(() => {
+    if (shouldHide) {
+      setScrolled(false);
+      return undefined;
+    }
     const handleScroll = () => {
       if (window.scrollY > 20) {
         setScrolled(true);
@@ -26,21 +31,30 @@ const Navbar = () => {
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [shouldHide]);
 
-  const handleLogout = () => {
-    alert("Logout Berhasil");
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (err) {
+      // ensure storage cleared even if API fails
+      localStorage.removeItem('token');
+      localStorage.removeItem('user_role');
+      localStorage.removeItem('user_id');
+    }
+    // navigate to login after clearing
     navigate('/login');
   };
 
+  // Helper untuk mengecek menu aktif
   const isActive = (path) => location.pathname === path ? "text-blue-600 font-bold" : "text-gray-500 hover:text-blue-600";
+
+  if (shouldHide) return null;
 
   return (
     <>
-      {/* FIX 1: z-[9999] agar navbar SELALU di atas elemen apapun (termasuk Search Bar).
-         FIX 2: pointer-events-none di container luar agar area kosong di kiri-kanan navbar tidak menghalangi klik ke halaman.
-      */}
-      <div className="no-print fixed top-0 left-0 right-0 z-[9999] flex justify-center pt-6 px-4 pointer-events-none">
+      {/* Container Utama Navbar (Floating) */}
+      <div className="no-print fixed top-0 left-0 right-0 z-50 flex justify-center pt-6 px-4 pointer-events-none">
         
         {/* Kapsul Navbar */}
         <nav className={`pointer-events-auto w-full max-w-6xl transition-all duration-300 ease-in-out border border-white/40
@@ -61,7 +75,7 @@ const Navbar = () => {
             
             {isLoggedIn ? (
               <div className="flex items-center space-x-2 pl-4 border-l border-gray-200">
-                <Link to="/my-bookings" className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-600 transition" title="My Booking">
+                <Link to="/booking-history" className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-600 transition" title="My Booking">
                   <Ticket size={18} />
                 </Link>
                 <Link to="/profile" className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 hover:bg-blue-100 text-gray-600 hover:text-blue-600 transition" title="Profile">
@@ -92,11 +106,10 @@ const Navbar = () => {
         </nav>
       </div>
 
-      {/* Mobile Menu Dropdown */}
-      {/* FIX 3: z-[9998] agar dropdown juga sangat tinggi (sedikit di bawah navbar utama) */}
+      {/* Mobile Menu Dropdown (Floating Box Terpisah) */}
       {isOpen && (
-        <div className="fixed top-24 left-4 right-4 z-[9998] md:hidden animate-in fade-in slide-in-from-top-5 duration-300">
-          <div className="bg-white/95 backdrop-blur-xl border border-white/50 rounded-3xl shadow-2xl p-4 flex flex-col gap-2 ring-1 ring-black/5">
+        <div className="fixed top-24 left-4 right-4 z-40 md:hidden animate-in fade-in slide-in-from-top-5 duration-300">
+          <div className="bg-white/90 backdrop-blur-xl border border-white/50 rounded-3xl shadow-2xl p-4 flex flex-col gap-2">
             <Link to="/" onClick={() => setIsOpen(false)} className={`block px-4 py-3 rounded-xl font-medium ${location.pathname === '/' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'}`}>Home</Link>
             <Link to="/events" onClick={() => setIsOpen(false)} className={`block px-4 py-3 rounded-xl font-medium ${location.pathname === '/events' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'}`}>Events</Link>
             
@@ -104,7 +117,7 @@ const Navbar = () => {
 
             {isLoggedIn ? (
               <>
-                <Link to="/my-bookings" onClick={() => setIsOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-50 font-medium">
+                <Link to="/booking-history" onClick={() => setIsOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-50 font-medium">
                     <Ticket size={18} className="text-blue-500"/> My Booking
                 </Link>
                 <Link to="/profile" onClick={() => setIsOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-50 font-medium">

@@ -53,8 +53,17 @@ def cors_tween_factory(handler, registry):
 
     return cors_tween
 
+def _apply_database_url(settings):
+    db_url = settings.get('sqlalchemy.url') or os.getenv('DATABASE_URL', '')
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql://', 1)
+    if db_url:
+        settings['sqlalchemy.url'] = db_url
+    return db_url
+
 def main(global_config, **settings):
     # Setup Database
+    _apply_database_url(settings)
     engine = engine_from_config(settings, 'sqlalchemy.')
 
     base_dir = os.path.dirname(os.path.abspath(__file__)) 
@@ -72,6 +81,9 @@ def main(global_config, **settings):
 
         # Ini agar gambar bisa diakses via URL: http://localhost:6543/static/uploads/namafile.jpg
         config.add_static_view(name='static', path='app:static')
+
+        # Root landing route
+        config.add_route('home', '/')
 
         # --- ROUTE PROFILE (BARU) ---
         config.add_route('profile', '/api/profile') # Bisa GET (Lihat) & POST (Edit)
@@ -108,7 +120,7 @@ def main(global_config, **settings):
         # PUT (Update Role) & DELETE (Hapus)
         config.add_route('manage_user_detail', '/api/superadmin/users/{id}')
         # ------------------------
-        config.add_tween(cors_tween_factory)
+        config.add_tween('app.cors_tween_factory')
 
         config.scan('.views')
         
